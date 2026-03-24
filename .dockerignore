@@ -1,0 +1,10 @@
+.venv
+.git
+.pytest_cache
+__pycache__
+*.pyc
+.eggs
+*.egg-info
+lake/
+docs/pre-dev/
+docs/genesis-dev-cycle/

@@ -1,0 +1,62 @@
+FROM python:3.12-slim
+
+LABEL description="DataSpoc Demo — Pipe + Lens + Jupyter with sample data"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl util-linux \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir uv
+
+WORKDIR /app
+
+# Copy Pipe
+COPY pyproject.toml README.md ./
+COPY src/dataspoc_pipe/ src/dataspoc_pipe/
+
+# Install Pipe
+RUN uv pip install --system -e .
+
+# Copy Lens
+COPY lens/pyproject.toml lens/README.md lens/
+COPY lens/src/dataspoc_lens/ lens/src/dataspoc_lens/
+
+# Install Lens with jupyter + ai extras
+RUN cd lens && uv pip install --system -e ".[all]"
+
+# Copy examples
+COPY examples/ examples/
+
+# Download sample datasets
+RUN curl -sL "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv" -o /tmp/iris.csv \
+    && curl -sL "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/titanic.csv" -o /tmp/titanic.csv \
+    && curl -sL "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/tips.csv" -o /tmp/tips.csv
+
+# Ingest all 3 datasets with Pipe
+RUN dataspoc-pipe init
+
+# Iris pipeline
+RUN echo '{"csv_path": "/tmp/iris.csv", "stream_name": "iris"}' > /tmp/iris-config.json \
+    && mkdir -p ~/.dataspoc-pipe/pipelines \
+    && printf 'source:\n  tap: "python /app/examples/mock_tap_csv.py"\n  config: /tmp/iris-config.json\ndestination:\n  bucket: "file:///lake"\n  path: raw\n  compression: zstd\n' > ~/.dataspoc-pipe/pipelines/iris.yaml \
+    && dataspoc-pipe run iris
+
+# Titanic pipeline
+RUN echo '{"csv_path": "/tmp/titanic.csv", "stream_name": "titanic"}' > /tmp/titanic-config.json \
+    && printf 'source:\n  tap: "python /app/examples/mock_tap_csv.py"\n  config: /tmp/titanic-config.json\ndestination:\n  bucket: "file:///lake"\n  path: raw\n  compression: zstd\n' > ~/.dataspoc-pipe/pipelines/titanic.yaml \
+    && dataspoc-pipe run titanic
+
+# Tips pipeline
+RUN echo '{"csv_path": "/tmp/tips.csv", "stream_name": "tips"}' > /tmp/tips-config.json \
+    && printf 'source:\n  tap: "python /app/examples/mock_tap_csv.py"\n  config: /tmp/tips-config.json\ndestination:\n  bucket: "file:///lake"\n  path: raw\n  compression: zstd\n' > ~/.dataspoc-pipe/pipelines/tips.yaml \
+    && dataspoc-pipe run tips
+
+# Setup Lens
+RUN dataspoc-lens init \
+    && dataspoc-lens add-bucket "file:///lake"
+
+# Expose Jupyter
+EXPOSE 8888
+
+# Default: launch Jupyter with tables pre-mounted
+CMD ["dataspoc-lens", "notebook"]
