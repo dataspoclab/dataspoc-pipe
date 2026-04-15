@@ -1,156 +1,196 @@
 <h1 align="center">DataSpoc Pipe</h1>
 
 <p align="center">
-  <a href="#"><img src="https://img.shields.io/github/actions/workflow/status/dataspoc/dataspoc-pipe/ci.yml?branch=main&label=CI&style=flat-square" alt="CI"></a>
+  <a href="https://github.com/dataspoclab/dataspoc-pipe/actions"><img src="https://img.shields.io/github/actions/workflow/status/dataspoclab/dataspoc-pipe/ci.yml?branch=main&label=CI&style=flat-square" alt="CI"></a>
   <a href="https://pypi.org/project/dataspoc-pipe/"><img src="https://img.shields.io/pypi/v/dataspoc-pipe?style=flat-square" alt="PyPI"></a>
   <a href="https://github.com/dataspoclab/dataspoc-pipe/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square" alt="License"></a>
-  <a href="#"><img src="https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square" alt="Python 3.10+"></a>
-  <a href="#"><img src="https://img.shields.io/badge/discord-join-7289da?style=flat-square&logo=discord&logoColor=white" alt="Discord"></a>
+  <a href="https://pypi.org/project/dataspoc-pipe/"><img src="https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square" alt="Python 3.10+"></a>
 </p>
 
 <p align="center"><i>Singer taps to Parquet in cloud buckets. That simple.</i></p>
 
-<p align="center">
-  <a href="#">Docs</a> &middot;
-  <a href="#">Tutorial</a> &middot;
-  <a href="#">Discord</a>
-</p>
-
-<!-- TODO: Add hero GIF/screenshot of the CLI running a pipeline end-to-end -->
-
 ## Why DataSpoc Pipe?
 
-Most data ingestion tools drown you in orchestration complexity. DataSpoc Pipe does one thing well: connect to any of the **400+ Singer taps** (databases, APIs, SaaS), convert to Parquet, and land it in your cloud bucket — cataloged and ready to query. Handles tables from kilobytes to **hundreds of GBs** via streaming. No DAGs, no servers, no infrastructure.
+Most data ingestion tools drown you in orchestration complexity. DataSpoc Pipe does one thing well: connect to any of the **400+ Singer taps** (databases, APIs, SaaS), convert to Parquet, and land it in your cloud bucket -- cataloged and ready to query. No DAGs, no servers, no infrastructure.
 
-> **400+** data sources · **Streaming** (no memory limits) · **Zero** infrastructure · **< 15 min** setup
-
-## Highlights
-
-- **Singer-compatible** — use any of the 400+ existing Singer taps
-- **Parquet output** — columnar, compressed (zstd), ready for analytics
-- **Multi-cloud** — S3, GCS, Azure Blob, or local filesystem
-- **Auto-catalog** — generates `manifest.json` so downstream tools discover your tables automatically
-- **Incremental ingestion** — bookmark-based state tracking, only fetch new data
-- **Convention-based transforms** — drop a Python file in `transforms/` to clean data during ingestion, per batch, no config needed
-- **Built-in taps** — Google Sheets (public) works out of the box, no extra install
-- **CLI-first** — one command to run a pipeline, cron to schedule it
-- **Stateless** — all state lives in the bucket, not on your machine
+> **400+** data sources -- **Streaming** (no memory limits) -- **Zero** infrastructure -- **< 15 min** setup
 
 ## Installation
 
 ```bash
-pip install dataspoc-pipe[s3]
-```
-
-<details>
-<summary>Other cloud providers</summary>
-
-```bash
-# Google Cloud Storage
-pip install dataspoc-pipe[gcs]
-
-# Azure Blob Storage
-pip install dataspoc-pipe[azure]
-
-# Local filesystem only (no extras needed)
 pip install dataspoc-pipe
 ```
 
-</details>
-
-## Quick start
+Cloud storage extras:
 
 ```bash
-# 1. Initialize config structure
+pip install dataspoc-pipe[s3]      # AWS S3
+pip install dataspoc-pipe[gcs]     # Google Cloud Storage
+pip install dataspoc-pipe[azure]   # Azure Blob Storage
+```
+
+Singer taps are installed separately:
+
+```bash
+pip install tap-csv
+pip install tap-postgres
+```
+
+## Quick Start
+
+### 1. Initialize
+
+```bash
 dataspoc-pipe init
+```
 
-# 2. Create a pipeline (interactive wizard)
-dataspoc-pipe add my-pipeline
+Creates `~/.dataspoc-pipe/` with `config.yaml`, `pipelines/`, `sources/`, and `transforms/`.
 
-# 3. Edit the generated source config if needed
-#    ~/.dataspoc-pipe/sources/my-pipeline.json
+### 2. Install a Singer tap and prepare data
 
-# 4. Run it
-dataspoc-pipe run my-pipeline
+```bash
+pip install tap-csv
+```
 
-# 5. Check results
+Create `/tmp/sample/users.csv`:
+
+```csv
+id,name,email
+1,Alice,alice@example.com
+2,Bob,bob@example.com
+3,Carol,carol@example.com
+```
+
+### 3. Create a pipeline
+
+```bash
+dataspoc-pipe add my-first-pipeline
+```
+
+The interactive wizard prompts for tap name, destination bucket, compression, incremental mode, and schedule. Or create `~/.dataspoc-pipe/pipelines/my-first-pipeline.yaml` manually:
+
+```yaml
+source:
+  tap: tap-csv
+  config:
+    files:
+      - entity: users
+        path: /tmp/sample/users.csv
+        keys:
+          - id
+
+destination:
+  bucket: file:///tmp/my-lake
+  path: raw
+  compression: zstd
+
+incremental:
+  enabled: false
+```
+
+### 4. Validate and run
+
+```bash
+dataspoc-pipe validate my-first-pipeline
+dataspoc-pipe run my-first-pipeline
+```
+
+### 5. Check results
+
+```bash
 dataspoc-pipe status
+dataspoc-pipe logs my-first-pipeline
+dataspoc-pipe manifest file:///tmp/my-lake
 ```
 
-Your data is now at `<bucket>/raw/<source>/<table>/` as Parquet.
+Your data is now at `/tmp/my-lake/raw/csv/users/dt=2026-03-20/users_0000.parquet`.
 
-Config structure created by `init`:
-```
-~/.dataspoc-pipe/
-  config.yaml           # Global defaults
-  sources/              # Source configs (1 JSON per source, generated by `add`)
-  pipelines/            # Pipeline definitions (1 YAML per pipeline)
-  transforms/           # Optional Python transforms (same name as pipeline)
-```
-
-## How it works
+## How It Works
 
 ```
-                          stdout
-┌─────────────┐    ┌──────────┐    ┌───────────────┐    ┌──────────────┐
-│ Data Source │───>│ Singer   │───>│ DataSpoc Pipe │───>│ Cloud Bucket │
-│ (DB, API, …)│    │ Tap      │    │ transform(df) │    │ (S3/GCS/Az)  │
-└─────────────┘    └──────────┘    └───────┬───────┘    └──────────────┘
-                                           │
-                                    manifest.json
-                                     state.json
-                                       logs/
+┌─────────────┐    ┌──────────┐  stdout  ┌───────────────┐    ┌──────────────┐
+│ Data Source  │───>│ Singer   │─────────>│ DataSpoc Pipe │───>│ Cloud Bucket │
+│ (DB, API, …)│    │ Tap      │          │ transform(df) │    │ (S3/GCS/Az)  │
+└─────────────┘    └──────────┘          └───────┬───────┘    └──────────────┘
+                                                 │
+                                          manifest.json
+                                           state.json
+                                             logs/
 ```
 
 1. Singer tap extracts data from the source, emits JSON on stdout
 2. Pipe reads the stream, buffers in batches (~10K records)
-3. If `transforms/<pipeline>.py` exists → applies `transform(df)` per batch
-4. Converts to Parquet and uploads to bucket
+3. If `~/.dataspoc-pipe/transforms/<pipeline>.py` exists, applies `transform(df)` per batch
+4. Converts to Parquet (zstd) and uploads to bucket
 5. Updates the manifest catalog and saves execution logs
 
-## Built-in taps
+## Commands
 
-| Tap | Source | Config template | Extra install |
-|-----|--------|----------------|---------------|
-| `parquet` | Parquet files (local or S3/GCS/Azure) | Built-in | None |
-| `google-sheets-public` | Public Google Sheets | Built-in | None |
-| `tap-postgres` | PostgreSQL | Yes | `pip install tap-postgres` |
-| `tap-mysql` | MySQL | Yes | `pip install tap-mysql` |
-| `tap-csv` | CSV files | Yes | `pip install tap-csv` |
-| `tap-s3-csv` | CSV on S3 | Yes | `pip install tap-s3-csv` |
-| `tap-github` | GitHub API | Yes | `pip install tap-github` |
-| `tap-rest-api` | Any REST API | Yes | `pip install tap-rest-api` |
-| `tap-mongodb` | MongoDB | Yes | `pip install tap-mongodb` |
-| `tap-salesforce` | Salesforce | Yes | `pip install tap-salesforce` |
-| `tap-google-sheets` | Google Sheets (OAuth) | Yes | `pip install tap-google-sheets` |
+```bash
+dataspoc-pipe init                    # Initialize config structure
+dataspoc-pipe add <name>              # Create pipeline (interactive wizard)
+dataspoc-pipe run <name>              # Run a pipeline
+dataspoc-pipe run <name> --full       # Force full extraction (ignore bookmarks)
+dataspoc-pipe run _ --all             # Run all pipelines
+dataspoc-pipe status                  # Status table for all pipelines
+dataspoc-pipe logs <name>             # Last execution log (JSON)
+dataspoc-pipe validate [name]         # Test bucket and tap connectivity
+dataspoc-pipe manifest <bucket>       # Show data catalog
+dataspoc-pipe schedule install        # Install cron jobs
+dataspoc-pipe schedule remove         # Remove cron jobs
+dataspoc-pipe --version               # Show version
+```
+
+## Incremental Extraction
+
+Enable in pipeline YAML:
+
+```yaml
+incremental:
+  enabled: true
+```
+
+Pipe saves Singer bookmarks to `<bucket>/.dataspoc/state/<pipeline>/state.json`. Next run only fetches new data. Use `--full` to re-extract everything.
+
+## Bucket Convention
+
+This is the public contract between Pipe, Lens, and ML. Do not change without versioning.
+
+```
+<bucket>/
+  .dataspoc/
+    manifest.json                          # Data catalog
+    state/<pipeline>/state.json            # Incremental bookmarks
+    logs/<pipeline>/<timestamp>.json       # Execution logs
+  raw/<source>/<table>/
+    dt=YYYY-MM-DD/                         # Hive-style partitioning
+      <table>_0000.parquet                 # Data files
+```
+
+## Built-in Taps
+
+| Tap | Source | Extra install |
+|-----|--------|---------------|
+| `parquet` | Parquet files (local/cloud) | None |
+| `google-sheets-public` | Public Google Sheets | None |
 
 Any Singer-compatible tap works. Run `dataspoc-pipe add` to see available templates.
 
-## Access control
-
-DataSpoc delegates all access control to your cloud provider's IAM. Best practices:
-
-- **One bucket per permission boundary** — e.g., `s3://company-public`, `s3://company-finance`, `s3://company-hr`
-- **Pipe needs write access** to the destination bucket; users need only read access
-- **Use IAM roles and policies** — never store credentials in pipeline configs
-- If credentials lack permission, the pipeline fails with "Access Denied"
-
 ## Part of the DataSpoc Platform
 
-| Project | Role |
+| Product | Role |
 |---------|------|
-| **DataSpoc Pipe** (this) | Ingestion: Singer taps to Parquet in cloud buckets |
-| **DataSpoc Lens** | Virtual warehouse: SQL + Jupyter + AI over your data lake |
+| **[DataSpoc Pipe](https://github.com/dataspoclab/dataspoc-pipe)** (this) | Ingestion: Singer taps to Parquet in cloud buckets |
+| **[DataSpoc Lens](https://github.com/dataspoclab/dataspoc-lens)** | Virtual warehouse: SQL + Jupyter + AI over your data lake |
 | **DataSpoc ML** | AutoML: train and deploy models from your lake |
 
-The bucket is the contract. Pipe writes. Lens reads. ML consumes and produces.
+The bucket is the contract. Pipe writes. Lens reads. ML learns.
 
 ## Community
 
-- **Discord** — [Join the conversation](#) for questions and support
-- **GitHub Issues** — [Report bugs or request features](https://github.com/dataspoclab/dataspoc-pipe/issues)
-- **Contributing** — PRs welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
+- **GitHub Issues** -- [Report bugs or request features](https://github.com/dataspoclab/dataspoc-pipe/issues)
+- **Contributing** -- PRs welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
 
 ## License
 
-[Apache 2.0](LICENSE) — free to use, modify, and distribute.
+[Apache 2.0](LICENSE) -- free to use, modify, and distribute.
