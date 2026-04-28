@@ -222,7 +222,9 @@ def _print_result(result) -> None:
 
 
 @app.command()
-def status() -> None:
+def status(
+    output: str = typer.Option("table", "--output", help="Output format: table or json"),
+) -> None:
     """Show the status of all pipelines."""
     from rich.table import Table
 
@@ -234,6 +236,31 @@ def status() -> None:
         console.print("[yellow]No pipelines configured. Use 'dataspoc-pipe add' first.[/yellow]")
         return
 
+    rows_data = []
+    for name in names:
+        try:
+            config = load_pipeline(name)
+            log = load_latest_log(config.destination.bucket, name)
+        except Exception:
+            rows_data.append({"name": name, "last_run": "-", "status": "no runs", "duration": "-", "records": "-"})
+            continue
+
+        if log is None:
+            rows_data.append({"name": name, "last_run": "-", "status": "no runs", "duration": "-", "records": "-"})
+        else:
+            rows_data.append({
+                "name": name,
+                "last_run": log.get("started_at", "-")[:19],
+                "status": log["status"],
+                "duration": f"{log.get('duration_seconds', 0):.1f}s",
+                "records": log.get("total_records", 0),
+            })
+
+    if output == "json":
+        import json as json_mod
+        print(json_mod.dumps(rows_data, default=str))
+        return
+
     table = Table(title="Pipelines")
     table.add_column("Pipeline", style="bold")
     table.add_column("Last Run")
@@ -241,27 +268,24 @@ def status() -> None:
     table.add_column("Duration")
     table.add_column("Records")
 
-    for name in names:
-        try:
-            config = load_pipeline(name)
-            log = load_latest_log(config.destination.bucket, name)
-        except Exception:
-            table.add_row(name, "-", "[yellow]no runs[/yellow]", "-", "-")
-            continue
-
-        if log is None:
-            table.add_row(name, "-", "[yellow]no runs[/yellow]", "-", "-")
+    for row in rows_data:
+        status_str = row["status"]
+        if status_str == "success":
+            status_str = "[green]success[/green]"
+        elif status_str == "failure":
+            status_str = "[red]failure[/red]"
         else:
-            status_str = "[green]success[/green]" if log["status"] == "success" else "[red]failure[/red]"
-            duration = f"{log.get('duration_seconds', 0):.1f}s"
-            rows = str(log.get("total_records", 0))
-            table.add_row(name, log.get("started_at", "-")[:19], status_str, duration, rows)
+            status_str = f"[yellow]{status_str}[/yellow]"
+        table.add_row(row["name"], row["last_run"], status_str, row["duration"], str(row["records"]))
 
     console.print(table)
 
 
 @app.command()
-def logs(nome: str = typer.Argument(..., help="Pipeline name")) -> None:
+def logs(
+    nome: str = typer.Argument(..., help="Pipeline name"),
+    output: str = typer.Option("table", "--output", help="Output format: table or json"),
+) -> None:
     """Show logs from the last pipeline execution."""
     import json as json_mod
 
@@ -275,12 +299,17 @@ def logs(nome: str = typer.Argument(..., help="Pipeline name")) -> None:
         console.print(f"[yellow]No logs found for '{nome}'.[/yellow]")
         return
 
+    if output == "json":
+        print(json_mod.dumps(log, indent=2, default=str, ensure_ascii=False))
+        return
+
     console.print(json_mod.dumps(log, indent=2, ensure_ascii=False))
 
 
 @app.command()
 def validate(
     nome: str = typer.Argument(None, help="Pipeline name (or all if omitted)"),
+    output: str = typer.Option("table", "--output", help="Output format: table or json"),
 ) -> None:
     """Test connections to sources and buckets."""
     from dataspoc_pipe.config import list_pipelines, load_pipeline
@@ -291,37 +320,56 @@ def validate(
         console.print("[yellow]No pipelines configured. Use 'dataspoc-pipe add' first.[/yellow]")
         return
 
+    results = []
     for name in names:
         try:
             config = load_pipeline(name)
         except FileNotFoundError:
-            console.print(f"[red]Pipeline '{name}' not found.[/red]")
+            if output == "json":
+                results.append({"pipeline": name, "bucket_ok": False, "tap_ok": False, "error": "not found"})
+            else:
+                console.print(f"[red]Pipeline '{name}' not found.[/red]")
             continue
 
-        console.print(f"\n[bold]Validating: {name}[/bold]")
+        if output != "json":
+            console.print(f"\n[bold]Validating: {name}[/bold]")
 
         # Test bucket
         test_uri = f"{config.destination.bucket.rstrip('/')}/.dataspoc/_validate_test"
+        bucket_ok = False
         try:
             write_bytes(test_uri, b"ok")
             assert exists(test_uri)
             delete(test_uri)
-            console.print(f"  [green]Bucket OK:[/green] {config.destination.bucket}")
+            bucket_ok = True
+            if output != "json":
+                console.print(f"  [green]Bucket OK:[/green] {config.destination.bucket}")
         except Exception as e:
-            console.print(f"  [red]Bucket FAILED:[/red] {config.destination.bucket} — {e}")
+            if output != "json":
+                console.print(f"  [red]Bucket FAILED:[/red] {config.destination.bucket} — {e}")
 
         # Test tap (check if it exists in PATH)
         import shutil
 
-        if shutil.which(config.source.tap):
-            console.print(f"  [green]Tap OK:[/green] {config.source.tap} found in PATH")
-        else:
-            console.print(f"  [yellow]Tap:[/yellow] {config.source.tap} not found in PATH")
+        tap_ok = bool(shutil.which(config.source.tap))
+        if output != "json":
+            if tap_ok:
+                console.print(f"  [green]Tap OK:[/green] {config.source.tap} found in PATH")
+            else:
+                console.print(f"  [yellow]Tap:[/yellow] {config.source.tap} not found in PATH")
+
+        if output == "json":
+            results.append({"pipeline": name, "bucket_ok": bucket_ok, "tap_ok": tap_ok})
+
+    if output == "json":
+        import json as json_mod
+        print(json_mod.dumps(results, default=str))
 
 
 @app.command()
 def manifest(
     bucket: str = typer.Argument(..., help="Bucket URI"),
+    output: str = typer.Option("table", "--output", help="Output format: table or json"),
 ) -> None:
     """Show the manifest/catalog of a bucket."""
     import json as json_mod
@@ -330,10 +378,25 @@ def manifest(
 
     m = load_manifest(bucket)
     if not m.get("tables"):
+        if output == "json":
+            print(json_mod.dumps(m, default=str))
+            return
         console.print("[yellow]Empty manifest — no extractions performed on this bucket.[/yellow]")
         return
 
+    if output == "json":
+        print(json_mod.dumps(m, default=str, ensure_ascii=False))
+        return
+
     console.print(json_mod.dumps(m, indent=2, ensure_ascii=False))
+
+
+@app.command()
+def mcp() -> None:
+    """Start MCP server for AI agent integration."""
+    from dataspoc_pipe.mcp_server import run_server
+
+    run_server()
 
 
 @schedule_app.command("install")

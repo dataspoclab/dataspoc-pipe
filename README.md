@@ -124,6 +124,51 @@ Your data is now at `/tmp/my-lake/raw/csv/users/dt=2026-03-20/users_0000.parquet
 4. Converts to Parquet (zstd) and uploads to bucket
 5. Updates the manifest catalog and saves execution logs
 
+## AI Agent Integration
+
+Pipe works as an MCP server for Claude Desktop, Claude Code, Cursor, and any MCP-compatible AI agent.
+
+```bash
+pip install dataspoc-pipe[mcp]
+dataspoc-pipe mcp                     # Start MCP server (stdio)
+```
+
+Add to your Claude Desktop config (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "dataspoc-pipe": {
+      "command": "dataspoc-pipe",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Your agent can now list pipelines, trigger runs, check status, and read logs.
+
+### Python SDK
+
+```python
+from dataspoc_pipe import PipeClient
+
+client = PipeClient()
+pipelines = client.pipelines()
+result = client.run("sales-data")
+status = client.status()
+log = client.logs("sales-data")
+```
+
+### JSON Output
+
+All CLI commands support `--output json` for machine-readable output:
+
+```bash
+dataspoc-pipe status --output json
+dataspoc-pipe manifest s3://my-bucket --output json
+```
+
 ## Commands
 
 ```bash
@@ -138,7 +183,8 @@ dataspoc-pipe validate [name]         # Test bucket and tap connectivity
 dataspoc-pipe manifest <bucket>       # Show data catalog
 dataspoc-pipe schedule install        # Install cron jobs
 dataspoc-pipe schedule remove         # Remove cron jobs
-dataspoc-pipe --version               # Show version
+dataspoc-pipe mcp                    # Start MCP server for AI agents
+dataspoc-pipe --version              # Show version
 ```
 
 ## Incremental Extraction

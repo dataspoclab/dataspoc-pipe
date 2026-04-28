@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "dataspoc-pipe": {
+      "command": "dataspoc-pipe",
+      "args": ["mcp"]
+    }
+  }
+}
