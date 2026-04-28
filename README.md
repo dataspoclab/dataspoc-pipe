@@ -7,11 +7,11 @@
   <a href="https://pypi.org/project/dataspoc-pipe/"><img src="https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square" alt="Python 3.10+"></a>
 </p>
 
-<p align="center"><i>Singer taps to Parquet in cloud buckets. That simple.</i></p>
+<p align="center"><i>Data ingestion for humans and AI agents. Singer taps to Parquet in cloud buckets.</i></p>
 
 ## Why DataSpoc Pipe?
 
-Most data ingestion tools drown you in orchestration complexity. DataSpoc Pipe does one thing well: connect to any of the **400+ Singer taps** (databases, APIs, SaaS), convert to Parquet, and land it in your cloud bucket -- cataloged and ready to query. No DAGs, no servers, no infrastructure.
+Most data ingestion tools drown you in orchestration complexity. DataSpoc Pipe does one thing well: connect to any of the **400+ Singer taps** (databases, APIs, SaaS), convert to Parquet, and land it in your cloud bucket -- cataloged and ready to query. Works from the terminal, from Python, or as an MCP server for AI agents. No DAGs, no servers, no infrastructure.
 
 > **400+** data sources -- **Streaming** (no memory limits) -- **Zero** infrastructure -- **< 15 min** setup
 
