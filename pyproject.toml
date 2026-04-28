@@ -4,15 +4,15 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dataspoc-pipe"
-version = "0.1.1"
-description = "Motor de ingestão de dados — Singer + Parquet + Bucket"
+version = "0.2.0"
+description = "Data ingestion for humans and AI agents — Singer taps to Parquet in cloud buckets, with MCP server and Python SDK"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
 authors = [
     { name = "DataSpoc", email = "dev@dataspoc.com" },
 ]
-keywords = ["data", "ingestion", "singer", "parquet", "etl"]
+keywords = ["data", "ingestion", "singer", "parquet", "etl", "mcp", "ai-agent", "data-lake"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
